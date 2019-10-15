@@ -18,6 +18,7 @@ import numpy as np
 import skimage.draw
 import sys
 import copy
+import math
 
 dtype = np.float64
 
@@ -195,7 +196,7 @@ class Particle(object):
 
             map_T_particle = Pose(rotation=np.random.uniform(-np.pi, np.pi),
                                   translation=translation)
-
+ 
         self.grid = grid
         self.map_T_particle = map_T_particle
         self.last_odom_timestamp = None
@@ -208,6 +209,26 @@ class Particle(object):
         else:
             dt = 0
         self.last_odom_timestamp = odom_msg.header.stamp
+        # code
+        vel_x = odom_msg.twist.twist.linear.x
+        vel_y = odom_msg.twist.twist.linear.y
+        angular = odom_msg.twist.twist.angular.z
+        
+        vel_x_noise = np.random.normal(vel_x, math.sqrt(LINEAR_MODEL_VAR_X))
+        vel_y_noise = np.random.normal(vel_y, math.sqrt(LINEAR_MODEL_VAR_Y))
+        angular_noise = np.random.normal(angular, math.sqrt(ANGULAR_MODEL_VAR))
+        
+        vel_vec = np.array([vel_x_noise, vel_y_noise])
+        vel_vec = RotateBy(vel_vec, self.map_T_particle.rotation)
+        
+        delta_x = vel_vec[0]*dt
+        delta_y = vel_vec[1]*dt
+        delta_angular = angular_noise*dt
+
+        self.map_T_particle.translation[0] += delta_x
+        self.map_T_particle.translation[1] += delta_y
+        self.map_T_particle.rotation += delta_angular
+
 
         ##########
         #
