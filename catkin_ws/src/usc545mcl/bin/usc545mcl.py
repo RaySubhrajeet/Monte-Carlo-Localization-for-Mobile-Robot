@@ -276,12 +276,12 @@ class Particle(object):
         #  2. Assign the weight of this particle as the product of these
         #     probabilities. Store this value in self.weight.
         #
-	gt_ranges = scan.ranges
+        gt_ranges = scan.ranges
         np_step_1 = (gt_ranges - sim_ranges)
         np_step_2 = np.multiply(np_step_1, np_step_1)
         np_step_3 = np.divide(-np_step_2, 2*SENSOR_MODEL_VAR)
         pdf = np.exp(np_step_3)/(np.sqrt(2*np.pi*SENSOR_MODEL_VAR))
-        self.weight = pdf
+        self.weight = np.prod(pdf)
 
         ##########
 
@@ -357,9 +357,10 @@ class ParticleFilter(object):
 
 		weights=[]
 		for particle in self.particles:
-			weights.append(particle.weight)            
-		weights/=sum(weights)
-		print(wieghts)
+			weights.append(particle.weight)  
+		weigh_sum = sum(weights)
+		for i in range(len(weights)):        
+			weights[i] /= weigh_sum
 		
 		resampled_particles=np.random.choice(a=self.particles, size=len(self.particles), replace=True, p= weights)
 		self.particles=copy.deepcopy(resampled_particles)
