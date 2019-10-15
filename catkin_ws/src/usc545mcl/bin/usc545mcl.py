@@ -276,6 +276,13 @@ class Particle(object):
         #  2. Assign the weight of this particle as the product of these
         #     probabilities. Store this value in self.weight.
         #
+	gt_ranges = scan.ranges
+        np_step_1 = (gt_ranges - sim_ranges)
+        np_step_2 = np.multiply(np_step_1, np_step_1)
+        np_step_3 = np.divide(-np_step_2, 2*SENSOR_MODEL_VAR)
+        pdf = np.exp(np_step_3)/(np.sqrt(2*np.pi*SENSOR_MODEL_VAR))
+        self.weight = pdf
+
         ##########
 
 
