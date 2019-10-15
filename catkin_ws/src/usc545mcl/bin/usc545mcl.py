@@ -18,6 +18,7 @@ import numpy as np
 import skimage.draw
 import sys
 import copy
+import math
 
 dtype = np.float64
 
@@ -181,81 +182,101 @@ class Scan(object):
 
 
 class Particle(object):
-	'''Individual particle representation.'''
-	def __init__(self, grid, map_T_particle=None):
-		if map_T_particle is None:
-			ll = grid.world_T_map.translation
-			ul = ll + grid.map_t_extents
+    '''Individual particle representation.'''
+    def __init__(self, grid, map_T_particle=None):
+        if map_T_particle is None:
+            ll = grid.world_T_map.translation
+            ul = ll + grid.map_t_extents
 
-			found = False
-			while not found:
-				translation = np.random.uniform(ll, ul)
-				if grid.GetWorldCoords(translation) == 0:
-					break
+            found = False
+            while not found:
+                translation = np.random.uniform(ll, ul)
+                if grid.GetWorldCoords(translation) == 0:
+                    break
 
-			map_T_particle = Pose(rotation=np.random.uniform(-np.pi, np.pi),
-								  translation=translation)
+            map_T_particle = Pose(rotation=np.random.uniform(-np.pi, np.pi),
+                                  translation=translation)
+ 
+        self.grid = grid
+        self.map_T_particle = map_T_particle
+        self.last_odom_timestamp = None
 
-		self.grid = grid
-		self.map_T_particle = map_T_particle
-		self.last_odom_timestamp = None
+    def UpdateOdom(self, odom_msg):
+        '''Propagate this particle according to the sensor data and motion
+        model.'''
+        if self.last_odom_timestamp is not None:
+            dt = (odom_msg.header.stamp - self.last_odom_timestamp).to_sec()
+        else:
+            dt = 0
+        self.last_odom_timestamp = odom_msg.header.stamp
+        # code
+        vel_x = odom_msg.twist.twist.linear.x
+        vel_y = odom_msg.twist.twist.linear.y
+        angular = odom_msg.twist.twist.angular.z
+        
+        vel_x_noise = np.random.normal(vel_x, math.sqrt(LINEAR_MODEL_VAR_X))
+        vel_y_noise = np.random.normal(vel_y, math.sqrt(LINEAR_MODEL_VAR_Y))
+        angular_noise = np.random.normal(angular, math.sqrt(ANGULAR_MODEL_VAR))
+        
+        vel_vec = np.array([vel_x_noise, vel_y_noise])
+        vel_vec = RotateBy(vel_vec, self.map_T_particle.rotation)
+        
+        delta_x = vel_vec[0]*dt
+        delta_y = vel_vec[1]*dt
+        delta_angular = angular_noise*dt
 
-	def UpdateOdom(self, odom_msg):
-		'''Propagate this particle according to the sensor data and motion
-		model.'''
-		if self.last_odom_timestamp is not None:
-			dt = (odom_msg.header.stamp - self.last_odom_timestamp).to_sec()
-		else:
-			dt = 0
-		self.last_odom_timestamp = odom_msg.header.stamp
+        self.map_T_particle.translation[0] += delta_x
+        self.map_T_particle.translation[1] += delta_y
+        self.map_T_particle.rotation += delta_angular
 
-		##########
-		#
-		#  YOUR CODE HERE (Odometry Section)
-		#
-		#  1. Extract the particle's velocity in its local frame
-		#     (odom_msg.twist.twist.linear.{x, y})
-		#  2. Add noise to the velocity, with component variance
-		#     LINEAR_MODEL_VAR_X and LINEAR_MODEL_VAR_Y
-		#  3. Transform the linear velocity into map frame (use the provided
-		#     RotateBy() function). The current pose of the particle, in map
-		#     frame, is stored in self.map_T_particle
-		#  4. Integrate the linear velocity to the particle pose, stored in
-		#     self.map_T_particle.translation
-		#  5. Extract the particle's rotational velocity
-		#     (odom_msg.twist.twist.angular.z)
-		#  6. Add noise to the rotational velocity, with variance
-		#     ANGULAR_MODEL_VAR
-		#  7. Integrate the rotational velocity into the particle pose, stored
-		#     in self.map_T_particle.rotation
-		#
-		##########
 
-	def _ComputeSimulatedRanges(self, scan):
-		translation = self.map_T_particle.translation
-		rotation = self.map_T_particle.rotation
-		return _ComputeSimulatedRanges(scan.angles, scan.range_max,
-									   self.grid.world_T_map.translation,
-									   translation, rotation, self.grid.data,
-									   self.grid.resolution)
+        ##########
+        #
+        #  YOUR CODE HERE (Odometry Section)
+        #
+        #  1. Extract the particle's velocity in its local frame
+        #     (odom_msg.twist.twist.linear.{x, y})
+        #  2. Add noise to the velocity, with component variance
+        #     LINEAR_MODEL_VAR_X and LINEAR_MODEL_VAR_Y
+        #  3. Transform the linear velocity into map frame (use the provided
+        #     RotateBy() function). The current pose of the particle, in map
+        #     frame, is stored in self.map_T_particle
+        #  4. Integrate the linear velocity to the particle pose, stored in
+        #     self.map_T_particle.translation
+        #  5. Extract the particle's rotational velocity
+        #     (odom_msg.twist.twist.angular.z)
+        #  6. Add noise to the rotational velocity, with variance
+        #     ANGULAR_MODEL_VAR
+        #  7. Integrate the rotational velocity into the particle pose, stored
+        #     in self.map_T_particle.rotation
+        #
+        ##########
 
-	def UpdateScan(self, scan):
-		'''
-		Calculate weights of particles according to scan / map matching.
-		'''
-		sim_ranges = self._ComputeSimulatedRanges(scan)
+    def _ComputeSimulatedRanges(self, scan):
+        translation = self.map_T_particle.translation
+        rotation = self.map_T_particle.rotation
+        return _ComputeSimulatedRanges(scan.angles, scan.range_max,
+                                       self.grid.world_T_map.translation,
+                                       translation, rotation, self.grid.data,
+                                       self.grid.resolution)
 
-		##########
-		#
-		#  YOUR CODE HERE (LIDAR Section)
-		#
-		#  1. Compute the likelihood of each beam, compared to sim_ranges. The
-		#     true measurement vector is in scan.ranges. Use the Gaussian PDF
-		#     formulation.
-		#  2. Assign the weight of this particle as the product of these
-		#     probabilities. Store this value in self.weight.
-		#
-		##########
+    def UpdateScan(self, scan):
+        '''
+        Calculate weights of particles according to scan / map matching.
+        '''
+        sim_ranges = self._ComputeSimulatedRanges(scan)
+
+        ##########
+        #
+        #  YOUR CODE HERE (LIDAR Section)
+        #
+        #  1. Compute the likelihood of each beam, compared to sim_ranges. The
+        #     true measurement vector is in scan.ranges. Use the Gaussian PDF
+        #     formulation.
+        #  2. Assign the weight of this particle as the product of these
+        #     probabilities. Store this value in self.weight.
+        #
+        ##########
 
 
 class ParticleFilter(object):
