@@ -349,9 +349,10 @@ class ParticleFilter(object):
 		##########
 
 		weights=[]
-		for particle in self.particles
-			wieghts.append(particle.weight)            
+		for particle in self.particles:
+			weights.append(particle.weight)            
 		weights/=sum(weights)
+		print(wieghts)
 		
 		resampled_particles=np.random.choice(a=self.particles, size=len(self.particles), replace=True, p= weights)
 		self.particles=copy.deepcopy(resampled_particles)
